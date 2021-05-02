@@ -31,7 +31,7 @@ def cbs(env, starts, goals):
 					child.find_paths(env, starts, goals)
 					child_cost = np.sum(np.array(child.cost)[mask])
 					pq.put_nowait((child_cost, child.depth+np.random.rand(1)[0], child))
-	return None
+	return None, cost
 
 class Constraint:
 

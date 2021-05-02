@@ -20,7 +20,7 @@ class Voronoii:
             d = self.G.edges[node,neighbor]['distance']
             c = self.G.edges[node,neighbor]['capacity']
 
-            cost = d * (1/(c+0.001)) * (t+1) # Both
+            cost = d * (1/(c+0.001)) * (t+1) # Both (Capacity, Distance)
             # cost = d * (t+1) + 0.001*1/(c+0.001)# Distance only
             # cost = 1/(c+0.001) + 0.001*d*(t+1)# Capacity Only
             x.append([neighbor, cost])

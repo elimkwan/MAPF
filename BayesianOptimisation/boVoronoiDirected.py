@@ -41,30 +41,28 @@ class Simulator:
                 thres=self.subgraph_thres, 
                 start_nodes = self.start_nodes,
                 end_nodes = self.end_nodes)
-            cbs_out = cbs(directed_voronoi_sub, start_locations, end_locations)
+            paths, cost = cbs(directed_voronoi_sub, start_locations, end_locations)
             
-            if cbs_out == None:
-                print("Cant find solution with SubGraph, reverting to original graph")
-                cbs_out = cbs(directed_voronoi, start_locations, end_locations)
-                paths, cost = cbs_out
-                global_cost, ft, ut = directed_voronoi.getOptimiserCost(paths)
-                return paths, global_cost, subgraph, ft, ut, directed_voronoi_sub, 0
+            # if cbs_out == None:
+                # print("Cant find solution with SubGraph, return high cost")
+                # cbs_out = cbs(directed_voronoi, start_locations, end_locations)
+                # paths, cost = cbs_out
+                # global_cost, ft, ut = directed_voronoi.getOptimiserCost(paths)
+                # return paths, global_cost, subgraph, ft, ut, directed_voronoi_sub, 0
 
-            paths, cost = cbs_out
-            global_cost, ft, ut = directed_voronoi_sub.getOptimiserCost(paths)
+            global_cost, ft, ut = directed_voronoi_sub.getOptimiserCost(paths, cost, self.start_nodes, self.end_nodes )
             return paths, global_cost, subgraph, ft, ut, directed_voronoi, self.subgraph_thres
         else:    
             subgraph = directed_voronoi_sub.formSubGraph(
                 thres=self.subgraph_thres, 
                 start_nodes = self.start_nodes,
                 end_nodes = self.end_nodes)
-            cbs_out = cbs(directed_voronoi_sub, start_locations, end_locations)
-            if cbs_out == None:
-                print("Cant find solution with subgraph, return high cost")
-                return 100000
+            paths, cost = cbs(directed_voronoi_sub, start_locations, end_locations)
+            # if cbs_out == None:
+                # print("Cant find solution with subgraph, return high cost")
+                # return 100000
 
-            paths, cost = cbs_out
-            global_cost, ft, ut = directed_voronoi_sub.getOptimiserCost(paths)
+            global_cost, ft, ut = directed_voronoi_sub.getOptimiserCost(paths, cost, self.start_nodes, self.end_nodes )
             return global_cost
         
 def updateEdgeProbability(graph, probability):
@@ -194,16 +192,13 @@ def finalRun(
         start_nodes = start_nodes,
         end_nodes = end_nodes)
 
-    cbs_out = cbs(directed_voronoi_sub, start_nodes, end_nodes)
+    paths, cost = cbs(directed_voronoi_sub, start_nodes, end_nodes)
 
-    if cbs_out == None or np.any(np.array(cbs_out[0])!= end_nodes):
-        print("Cant find solution with SubGraph, reverting to original graph")
-        cbs_out = cbs(directed_voronoi, start_nodes, end_nodes)
-        paths, cost = cbs_out
-        return paths, subgraph, directed_voronoi, 0
-
-    paths, cost = cbs_out
-    return paths, subgraph, directed_voronoi_sub, 0
+    if paths == None or np.any(np.array(paths)!= end_nodes):
+        print("Cant find solution with SubGraph, return None")
+        paths = np.array(start_nodes).reshape((constant.NUM_OF_AGENT, -1))
+        
+    return paths, cost, subgraph, directed_voronoi_sub, subgraph_thres
 
 def bo_voronoi_directed_clean(opt, graph, exp):
     # Form SubGraph and Regenerate Solution
@@ -211,17 +206,22 @@ def bo_voronoi_directed_clean(opt, graph, exp):
     x_opt = x_opt.astype('float').reshape(1,len(x_opt))
     # simulateObj = Simulator(graph, exp.start_nodes, exp.end_nodes)
 
-    paths, subgraph, env, subgraph_thres = finalRun(
+    output = finalRun(
         probability = x_opt,
         G = graph,
         start_nodes = exp.start_nodes,
         end_nodes = exp.end_nodes)
     
+    paths, cost, subgraph, env, subgraph_thres = output
+
+    if output == None:
+        return None
+    
     paths_np = np.array(paths)
     if np.any(paths_np[:,-1] != exp.end_nodes):
         print("\nCannot find solution\n")
 
-    _, ft, u1 = env.getOptimiserCost(paths)
+    _, ft, u1 = env.getOptimiserCost(paths, cost, exp.start_nodes, exp.end_nodes)
 
     # ut2 = env.getCoverage(exp)
     u2 = 0

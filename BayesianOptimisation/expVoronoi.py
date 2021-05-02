@@ -75,12 +75,14 @@ def exp_voronoi(exp):
     # print("Obtained Graph")
 
     voronoi = Voronoii(G)
-    out = cbs(voronoi, exp.start_nodes, exp.end_nodes)
-    if out == None:
-        print("\nCannot find solution\n")
-        return 0, 0, 0, 0, 0, 0, 0, G
-    else:
-        paths, cost = out
+    paths, cost = cbs(voronoi, exp.start_nodes, exp.end_nodes)
+    if paths == None:
+        paths = np.array(exp.start_nodes).reshape((constant.NUM_OF_AGENT, -1))
+                
+    #     print("\nCannot find solution\n")
+    #     return 0, 0, 0, 0, 0, 0, 0, G
+    # else:
+    #     paths, cost = out
 
     # print("Total avaliable area in Voronoi Diagram", voronoi.getTotalDistance())
     # print("Travelled area", travelled_area)

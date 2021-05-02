@@ -8,3 +8,4 @@ REGION = 16 #must be factor of 32
 MAP_SIZE = 32
 BO_INITIAL_SAMPLES = 50
 BO_OPT_SAMPLES = 30
+CONSTRAIN_PROBLEM = 1 #only consider top 5% edges (in terms of length)

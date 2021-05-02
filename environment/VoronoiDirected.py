@@ -18,12 +18,12 @@ class VoronoiDirected:
 
         for neighbor in self.G.neighbors(node):
             d = self.G.edges[node,neighbor,0]['distance']
-            p = self.G.edges[node,neighbor,0]['probability']
+            p = self.G.edges[node,neighbor,0]['probability'] #the direction factor
             c = self.G.edges[node,neighbor,0]['capacity']
 
-            cost = d * (1/(p*c+0.001)) * (t+1) # Both
+            cost = d * (1/(p*c+0.001)) * (t+1) # Both (Capacity, Direction, Distance)
             # cost = d * (t+1) + 0.001*(1/(p*c+0.001))# Distance only
-            # cost = 1/(p*c+0.001) + 0.001*d*(t+1) # Capacity Only
+            # cost = 1/(p*c+0.001) + 0.001*d*(t+1) # Capacity and Direction Only
             x.append([neighbor, cost])
         return x
 
@@ -60,33 +60,59 @@ class VoronoiDirected:
                     assigned[frozenset((n, e))] = 1
         return total_area
     
-    def getOptimiserCost(self, solution):
-        # given a set of paths, find the global cost
-        total_area = self.getTotalDistance()
-        travelled_area = 0
-        travelled_dist = 0
-        num_of_agent = len(solution)
+    def getOptimiserCost(self, solution, cost, start_nodes, end_nodes):
+        #Form a Continuous Cost Function#
+        if solution == None:
+            last_nodes = np.array(start_nodes)
+        else:
+            last_nodes = np.array(solution)[:,-1]
         
-        for agent_path in solution:
-            agent_travelled_area = 0
-            for idx in range(len(agent_path)-1):
-                cur, nextt = agent_path[idx], agent_path[idx+1]
-                
-                #find the transverse cost between cur and nextt
-                if (cur == nextt):
-                    agent_travelled_area += 0
-                else:
-                    d = self.G.edges[cur,nextt,0]['distance']
-                    c = self.G.edges[cur,nextt,0]['capacity']
-                    agent_travelled_area += d
-                    travelled_dist += d
+        penality = (np.sum(np.linalg.norm(last_nodes-end_nodes))+1)
+        print("penality", penality)
+        # print("cbs cost", cost)
+        # global_cost = (cost+1)*penality
+        # if solution == None:
+        #     print("Solution Not Found Cost", global_cost)
+        # else:
+        #     print("Normal Cost", global_cost)
+        
+        # print("\n")
             
-            travelled_area += agent_travelled_area
+
+        if solution == None:
+            travelled_area = 0
+            total_area = 1
+            travelled_dist = constant.NUM_OF_AGENT
+            num_of_agent = constant.NUM_OF_AGENT
+        else:
+            # given a set of paths, find the global cost
+            total_area = self.getTotalDistance()
+            travelled_area = 0
+            travelled_dist = 0
+            num_of_agent = len(solution)
             
+            for agent_path in solution:
+                agent_travelled_area = 0
+                for idx in range(len(agent_path)-1):
+                    cur, nextt = agent_path[idx], agent_path[idx+1]
+                    
+                    #find the transverse cost between cur and nextt
+                    if (cur == nextt):
+                        agent_travelled_area += 0
+                    else:
+                        d = self.G.edges[cur,nextt,0]['distance']
+                        c = self.G.edges[cur,nextt,0]['capacity']
+                        agent_travelled_area += d
+                        travelled_dist += d
+                travelled_area += agent_travelled_area
+
         ut = travelled_area/total_area
-        cost_ut = 1/(ut+0.01)
+        cost_ut = 1/(ut+0.001)
         cost_ft = travelled_dist/num_of_agent
-        return [cost_ut*cost_ft], cost_ft, ut
+        global_cost = cost_ft * cost_ut * penality
+        print("global cost", global_cost)
+        # return [cost_ut*cost_ft], cost_ft, ut
+        return global_cost, cost_ft, ut
 
     def formSubGraph(self, thres = 0.01, start_nodes = None, end_nodes = None):
         #threshold for eliminating edge TODO: find ways to tune it systematically
