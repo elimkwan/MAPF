@@ -2,6 +2,7 @@ from planner.Astar import *
 
 from queue import PriorityQueue
 import numpy as np
+import core.Constant as constant
 
 
 def cbs(env, starts, goals):
@@ -11,7 +12,12 @@ def cbs(env, starts, goals):
 	mask = np.array(root.cost) != float('inf')
 	root_cost = np.sum(np.array(root.cost)[mask])
 	pq.put_nowait((root_cost, root.depth, root))
+	iteration = 0
+
 	while not pq.empty():
+		if iteration > constant.CBS_MAX_ITER:
+			break
+
 		cost, _, x = pq.get_nowait()
 		# print("sol", x.solution)
 		conflict = find_conflict(x.solution, env)
@@ -31,7 +37,9 @@ def cbs(env, starts, goals):
 					child.find_paths(env, starts, goals)
 					child_cost = np.sum(np.array(child.cost)[mask])
 					pq.put_nowait((child_cost, child.depth+np.random.rand(1)[0], child))
-	return None, cost
+		iteration += 1
+
+	return [None]*len(starts), cost
 
 class Constraint:
 
@@ -177,6 +185,7 @@ def find_conflict(paths, env):
 							last_node = paths[agent][t-1]
 							# if the agent's last spot is now occupied by that other agent, it's a swap
 							if paths[other_agent][t] == last_node and \
+								frozenset((last_node, node)) in road_usage and \
 								road_usage[frozenset((last_node, node))] > env.getEdgeCapacity(last_node, node):
 								return {'agent1': agent, 'agent2': other_agent, 't': t, 'node': node, 'lastnode': last_node, 'transition': True}
 		last_states = states

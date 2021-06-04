@@ -6,34 +6,32 @@ from BayesianOptimisation.experiment_setup import Experiment
 import core.Constant as constant
 
 def exp_grid(exp):
-    # obstacles_loc, image = rawInputToArr()
-    # resolution = 1
-    # occupancy_grid = OccupancyGrid(image, [0,0], resolution)
-    # start_locations_tmp, end_locations_tmp, start_end_pair = rawSceneToArr()
-
-    # start_locations_tmp = np.array(start_locations_tmp[:(constant.NUM_OF_AGENT+len(skipped))])
-    # end_locations_tmp = np.array(end_locations_tmp[:(constant.NUM_OF_AGENT+len(skipped))])
-
-    # start_locations = np.delete(start_locations_tmp, skipped, axis = 0)
-    # end_locations = np.delete(end_locations_tmp, skipped, axis = 0) 
 
     if not exp.initialised:
         exp.setParameters()
 
-    resolution = 1
-    grid = Grid(exp.image, [0,0], resolution)
+    resolution = constant.RESOLUTION
+    # grid = Grid(exp.image, [0,0], resolution)
+    grid = Grid(exp)
     paths, cost = cbs_single(grid, np.array(exp.start_locations), np.array(exp.end_locations))
 
-    ft = cost/constant.NUM_OF_AGENT
+    if paths == None:
+        paths = np.array(exp.start_location).reshape((exp.NUM_OF_AGENT, -1))
 
-    u = grid.getOptimiserCost(
-        paths=paths, 
-        end_locations=exp.end_locations, 
-        total_free_space=exp.occupancy_grid.getArea())
+    for a, elem in enumerate(paths):
+        if np.any(elem == None):
+            paths[a] = [exp.start_locations[a]]
+
+    # paths = np.array(paths).reshape((exp.NUM_OF_AGENT, 2, -1))
+
+
+    cost,ft, ut, penality, conwait = grid.getOptimiserCost(paths,exp)
 
     congestion, maxmax, avgavg = grid.getCongestionLv(
         paths=paths,
     )
 
+    # penality = grid.get_penality_cost(paths, exp.start_locations, exp.end_locations)
+    # print("Grid Penality", penality)
 
-    return paths, ft, u, 1, congestion, maxmax, avgavg #path, avg flowtime, utilisation, congestion, maxmax, avgavg
+    return paths, cost, penality, ft, ut, 1, conwait, maxmax, avgavg #path, avg flowtime, utilisation, congestion, maxmax, avgavg

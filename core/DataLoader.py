@@ -7,9 +7,9 @@ import re
 import pandas as pd
 import copy
 
-def rawInputToArr():
+def rawInputToArr(scene_map="./input/random-32-32-10/random-32-32-10.map"):
 #     f = open("./maze-32-32-4/maze-32-32-4.map", "r")
-    f = open("./input/random-32-32-10/random-32-32-10.map", "r")
+    f = open(scene_map, "r")
     lines = f.readlines()
     f.close()
     
@@ -23,7 +23,7 @@ def rawInputToArr():
         k = np.array(list(cur_line), dtype = np.unicode)
         k = k[:width]
         
-        y = np.array(np.where(k == '64'))
+        y = np.array(np.where((k == '64')| (k == '84')))
         y = y.reshape((y.shape[1]))
         x = np.tile((index-4), y.shape[0])
         
@@ -43,18 +43,21 @@ def rawInputToArr():
     img = np.insert(img, img.shape[1], 1, axis=1)
     # print(img.shape)
     
-    max_i = img.shape[0]-1 #33
-    s1 = np.arange(0.5, max_i+1, 0.5).round(1)
+    max_i_row = img.shape[1]-1 #33 #42
+    s1 = np.arange(0.5, max_i_row+1, 0.5).round(1)
     s2 = np.tile(0.5, s1.shape[0])
     first_column = np.stack((s1,s2), axis = 1)
     first_column = np.delete(first_column, (0), axis=0)
     first_column = np.delete(first_column, (-1), axis=0)
 
     #add boundary to obstacle list
+    max_i = img.shape[0]-1 #74
     s3 = np.tile(max_i+0.5 , s1.shape[0])
-    last_column = np.stack((s1,s3), axis = 1)
-    last_column = np.delete(last_column, (0), axis=0)
-    last_column = np.delete(last_column, (-1), axis=0)
+    # last_column = np.stack((s1,s3), axis = 1)
+    # last_column = np.delete(last_column, (0), axis=0)
+    # last_column = np.delete(last_column, (-1), axis=0)
+    s4 = np.tile(max_i_row+0.5 , s1.shape[0])
+    last_column = np.stack((s1,s4), axis = 1)
 
     first_row = np.stack((s2,s1), axis = 1)
     last_row = np.stack((s3,s1), axis = 1)
@@ -64,7 +67,7 @@ def rawInputToArr():
     
     return final_obs, img
 
-def rawSceneToArr(scene = "./input/random-32-32-10/scen-even/random-32-32-10-even-1.scen"):
+def rawSceneToArr(scene = "./input/random-32-32-10/scen-even/random-32-32-10-even-1.scen", num_agent=1 ):
 #     f = open("./maze-32-32-4/scen-random/maze-32-32-4-random-1.scen", "r")
     f = open(scene, "r")
     lines = f.readlines()
@@ -73,12 +76,22 @@ def rawSceneToArr(scene = "./input/random-32-32-10/scen-even/random-32-32-10-eve
     starts = []
     ends = []
     pairs = {}
-    number_of_agent = constant.NUM_OF_AGENT + 10
+    consider_num_agent = len(lines)-2 # how many additional start end pair
+    number_of_agent = consider_num_agent
     c = 0
+
+    # Adjust if there are more maps
+    map_name = 'random-32-32-10'
+    if scene.split('/')[-1][2:] == 'den101d.scen':
+        map_name = 'den101d'
+    elif scene.split('/')[-1][2:] == 'lak109d.scen':
+        map_name = 'lak109d'
+    elif scene.split('/')[-1][2:] == 'lak105d.scen':
+        map_name = 'lak105d'
     
     for index, l in enumerate(lines):
         x = l.split()
-        match = re.match(r"random-32-32-10", x[1])
+        match = re.match(map_name, x[1])
         if match:
             coord = np.array(x[4:8]).astype('float') + 1
             starts.append([coord[0], coord[1]])
@@ -89,6 +102,9 @@ def rawSceneToArr(scene = "./input/random-32-32-10/scen-even/random-32-32-10-eve
                 return starts, ends, pairs
             else:
                 c += 1
+
+    print("cant find enough start end pair")
+    return starts, ends, pairs
 
 
 def removeInsidePoint(v, occupancy_grid):
@@ -120,6 +136,8 @@ def removeOtherInvalidLine(nodes, edges, occupancy_grid):
     for i, e in enumerate (edges):
         if occupancy_grid.isValidLine(nodes[e[0]], nodes[e[1]]):
             new_edges.append(e)
+        # else:
+            # print("removed invalid lines")
     return new_edges         
 
 def cleanNodesEdge(prev_nodes, prev_edges):
@@ -151,7 +169,7 @@ def cleanNodesEdge(prev_nodes, prev_edges):
     
     return new_nodes, new_edges_dir, new_edges
 
-def addStartEndNode(occupancy_grid, pairs, nodes, edges_dir, edges):
+def addStartEndNode(occupancy_grid, pairs, nodes, edges_dir, edges, num_agent):
     ZeroDist = 0
     SomeDist = 1
     NotPossible = 2
@@ -169,6 +187,7 @@ def addStartEndNode(occupancy_grid, pairs, nodes, edges_dir, edges):
             dist = df.loc[n, 0]
             if dist == 0.0:
                 return ZeroDist, n
+                # return  SomeDist, n # No matter how close the node is to the current node, add as new node
             if occupancy_grid.isValidLine(cur, nodes[int(n)]):
                 return  SomeDist, n
         return NotPossible, None
@@ -185,7 +204,10 @@ def addStartEndNode(occupancy_grid, pairs, nodes, edges_dir, edges):
             new_edges.append(Edge(c_n, m))
             new_edges.append(Edge(c_n, c_n))
             new_edges.append(Edge(m, m))
-            
+            return m
+        elif case == ZeroDist:
+            return c_n
+        return None
     
     new_nodes, new_edges_dir, new_edges = [], [], []
     start_nodes, end_nodes = [], []
@@ -201,12 +223,16 @@ def addStartEndNode(occupancy_grid, pairs, nodes, edges_dir, edges):
             continue
         
         count += 1
-        appendNode2(case1, connected_node1, start)
-        appendNode2(case2, connected_node2, pairs[start])
-        start_nodes.append(connected_node1)
-        end_nodes.append(connected_node2)
+        mm = appendNode2(case1, connected_node1, start)
+        if mm != None:
+            start_nodes.append(mm)
+        mm = appendNode2(case2, connected_node2, pairs[start])
+        if mm != None:
+            end_nodes.append(mm)
+        # start_nodes.append(connected_node1)
+        # end_nodes.append(connected_node2)
 
-        if count == constant.NUM_OF_AGENT:
+        if count == num_agent:
             break
     
     # for k in new_nodes:
@@ -216,9 +242,31 @@ def addStartEndNode(occupancy_grid, pairs, nodes, edges_dir, edges):
     edges.extend(new_edges)
     return nodes, edges_dir, edges, start_nodes, end_nodes, skipped
 
+# def generalise_start_end(occupancy_grid, start_end_pair):
+#     def get_position(initial):
+#         mean = [initial.x , initial.y]
+#         cov = [[1, 0], [0, 100]]
+#         ans = None
+#         while(True):
+#             ans = np.random.multivariate_normal(mean, cov)
+#             #check collision
+#             if not occupancy_grid.isOccupied(ans):
+#                 break
+#         return ans
+
+#     # loop all position in start_end_pair dictionary
+#     new_dict = {}
+#     for start in start_end_pair.keys():
+#         s = get_position(start)
+#         e = get_position(start_end_pair[start])
+#         new_dict[Point(s[0], s[1])] = Point(e[0], e[1])
+#     return new_dict
 
 
-def getVoronoiiParam(obstacles_loc = None, occupancy_grid = None, start_end_pair = None):
+
+
+
+def getVoronoiiParam(obstacles_loc = None, occupancy_grid = None, start_end_pair = None, num_agent=1):
     # Create Voronoi Diagram
     voronoi = Voronoi(obstacles_loc)
 
@@ -228,6 +276,13 @@ def getVoronoiiParam(obstacles_loc = None, occupancy_grid = None, start_end_pair
     edges_tmp = removeOtherInvalidLine(nodes_tmp, edges_tmp, occupancy_grid)
 
     nodes, edges_dir, edges = cleanNodesEdge(nodes_tmp, edges_tmp)
-    nodes, edges_dir, edges, start_nodes, end_nodes, skipped = addStartEndNode(occupancy_grid, start_end_pair, nodes, edges_dir, edges)
+
+    # Generalise Start-End Point
+    # if mode == "random":
+    #     start_end_pair = generalise_start_end(occupancy_grid, start_end_pair)
+    # elif mode == "set_to":
+    #     start_end_pair = specified_start_end
+
+    nodes, edges_dir, edges, start_nodes, end_nodes, skipped = addStartEndNode(occupancy_grid, start_end_pair, nodes, edges_dir, edges, num_agent)
 
     return nodes, edges_dir, edges, start_nodes, end_nodes, skipped

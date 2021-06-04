@@ -1,3 +1,4 @@
+from numpy.core import fromnumeric
 from core.DataStructure import OccupancyGrid, Point, Edge
 import core.Constant as constant
 
@@ -9,8 +10,10 @@ import matplotlib.patches as patches
 from matplotlib.patches import Rectangle
 
 class VoronoiDirected:
-    def __init__(self, graph):
+    def __init__(self, graph, exp=None):
         self.G = graph #networkx object
+        self.exp = exp
+        self.sz = exp.image.shape
 
     def next(self, node, t):
         # returns a list of (next_node, cost) tuples. this represents the children of node at time t.
@@ -21,9 +24,13 @@ class VoronoiDirected:
             p = self.G.edges[node,neighbor,0]['probability'] #the direction factor
             c = self.G.edges[node,neighbor,0]['capacity']
 
-            cost = d * (1/(p*c+0.001)) * (t+1) # Both (Capacity, Direction, Distance)
-            # cost = d * (t+1) + 0.001*(1/(p*c+0.001))# Distance only
-            # cost = 1/(p*c+0.001) + 0.001*d*(t+1) # Capacity and Direction Only
+            if self.exp.objective == "Both": 
+                cost = d * (1/(p*c+0.001)) * (t+1) # Both (Capacity, Direction, Distance)
+            elif self.exp.objective == "Capacity":
+                cost = 1/(p*c+0.001) + 0.001*d*(t+1) # Capacity Only
+            else:
+                cost = d * (t+1) + 0.001*(1/(p*c+0.001))# Distance only
+
             x.append([neighbor, cost])
         return x
 
@@ -36,83 +43,115 @@ class VoronoiDirected:
         return (np.linalg.norm(np.array([dx,dy]))+0.0001)
     
     def getEdgeCapacity(self, prev_node, node):
-        c = self.G.edges[prev_node,node,0]['capacity']
+        if (prev_node,node,0) in self.G.edges:
+            c = self.G.edges[prev_node,node,0]['capacity']
+        else:
+            c = 0
         return c
     
     def getNodeCapacity(self, node):
-        c = self.G.edges[node,node,0]['capacity']
+        if (node,node,0) in self.G.edges:
+            c = self.G.edges[node,node,0]['capacity']
+        else:
+            c = 0
         return c
     
-    def getTotalDistance(self):
-        thres = 0.1 #threshold for eliminating edge TODO: find ways to tune it systematically
-        total_area = 0
-        assigned = {}
-        for n in self.G.nodes:
-            for e in self.G.neighbors(n):
-                if n != e and frozenset((n, e)) not in assigned.keys():
-                    d = self.G.edges[n,e,0]['distance']
-                    c = self.G.edges[n,e,0]['capacity']
-                    p1 = self.G.edges[n,e,0]['probability']
-                    p2 = self.G.edges[e,n,0]['probability']
-                    
-                    # if ((p1+p2) > thres): # edge (directional) with too low use probability will be eliminated
-                    total_area += d 
-                    assigned[frozenset((n, e))] = 1
-        return total_area
-    
-    def getOptimiserCost(self, solution, cost, start_nodes, end_nodes):
-        #Form a Continuous Cost Function#
-        if solution == None:
-            last_nodes = np.array(start_nodes)
-        else:
-            last_nodes = np.array(solution)[:,-1]
-        
-        penality = (np.sum(np.linalg.norm(last_nodes-end_nodes))+1)
-        print("penality", penality)
-        # print("cbs cost", cost)
-        # global_cost = (cost+1)*penality
-        # if solution == None:
-        #     print("Solution Not Found Cost", global_cost)
-        # else:
-        #     print("Normal Cost", global_cost)
-        
-        # print("\n")
-            
+    def getOptimiserCost(self, solution, cost, exp):
+        # Form a Continuous Cost Function
+        # Calculate Penality
+        last_nodes = []
+        manual_set_sol = False
+        try:
+            for idx, s in enumerate(solution):
+                if s == None:
+                    last_nodes.append(exp.start_nodes[idx])
+                    manual_set_sol = True
+                else:
+                    last_nodes.append(s[-1])
+        except:
+            print("Caught exceptions set lastnode to startnode")
+            last_nodes = exp.start_nodes
+            manual_set_sol = True
+            solution = np.array(exp.start_nodes).reshape((12,1))
 
-        if solution == None:
-            travelled_area = 0
-            total_area = 1
-            travelled_dist = constant.NUM_OF_AGENT
-            num_of_agent = constant.NUM_OF_AGENT
+        aggr = 0
+        for i in range(len(last_nodes)):
+            end_node = self.G.nodes[exp.end_nodes[i]]['position']
+            last_node = self.G.nodes[last_nodes[i]]['position']
+            aggr += np.linalg.norm(np.array([last_node.x, last_node.y])-np.array([end_node.x, end_node.y]))
+        penality = aggr
+            
+        if np.all(solution == None) or manual_set_sol:
+            used_roadmap = 0
+            total_roadmap = 1
+            travelled_dist = exp.NUM_OF_AGENT
+            num_of_agent = exp.NUM_OF_AGENT
         else:
             # given a set of paths, find the global cost
-            total_area = self.getTotalDistance()
-            travelled_area = 0
             travelled_dist = 0
             num_of_agent = len(solution)
-            
+
+            # Flow Time
             for agent_path in solution:
-                agent_travelled_area = 0
                 for idx in range(len(agent_path)-1):
                     cur, nextt = agent_path[idx], agent_path[idx+1]
                     
                     #find the transverse cost between cur and nextt
                     if (cur == nextt):
-                        agent_travelled_area += 0
+                        travelled_dist += 0
                     else:
                         d = self.G.edges[cur,nextt,0]['distance']
                         c = self.G.edges[cur,nextt,0]['capacity']
-                        agent_travelled_area += d
                         travelled_dist += d
-                travelled_area += agent_travelled_area
 
-        ut = travelled_area/total_area
+            # Roadmap Utilisation
+            # total_area = self.getTotalDistance() #tbc
+            all_edges = {frozenset([e[0], e[1]]):self.G.edges[e[0], e[1], 0]['distance']*self.G.edges[e[0], e[1], 0]['capacity'] for e in self.G.edges}
+            visited_edge = {}
+            used_roadmap = 0
+            total_roadmap = 0
+
+            # Calculate total area in roadmap
+            for arg_e in all_edges:
+                if len(arg_e) < 2: #Dont add capacity of self loop edges
+                    continue
+                total_roadmap += all_edges[arg_e]
+                
+            # Calculate used area in roadmap
+            # print("len(agent_path)", len(agent_path))
+            for time_step in range(len(agent_path)-1):
+                transversing_edge = {}
+                transversing_edge_length = {}
+                for agent_path in solution:
+                    cur, nextt = agent_path[time_step], agent_path[time_step+1]
+                    if cur != nextt: #waiting doesnt occuiped road
+                        if frozenset([cur, nextt]) in transversing_edge:
+                            transversing_edge[frozenset([cur, nextt])] += 1
+                        else:
+                            transversing_edge[frozenset([cur, nextt])] = 1
+                            transversing_edge_length[frozenset([cur, nextt])] = self.G.edges[cur,nextt,0]['distance']
+                # print("transversing_edge", transversing_edge)
+                for cur_edge in transversing_edge:
+                    edge_area = transversing_edge_length[cur_edge]*1
+                    if cur_edge in visited_edge and transversing_edge[cur_edge] > visited_edge[cur_edge]:
+                        used_roadmap += (transversing_edge[cur_edge] -  visited_edge[cur_edge])*edge_area
+                        visited_edge[cur_edge] = transversing_edge[cur_edge]
+                    elif cur_edge not in visited_edge:
+                        used_roadmap += transversing_edge[cur_edge]*edge_area
+                        visited_edge[cur_edge] = transversing_edge[cur_edge]
+
+        # print("used rm", used_roadmap)
+        # print("total rm", total_roadmap)
+        ut = used_roadmap/total_roadmap #they are all area
         cost_ut = 1/(ut+0.001)
-        cost_ft = travelled_dist/num_of_agent
-        global_cost = cost_ft * cost_ut * penality
-        print("global cost", global_cost)
-        # return [cost_ut*cost_ft], cost_ft, ut
-        return global_cost, cost_ft, ut
+        cost_ft = travelled_dist/num_of_agent #1+travelled_dist/num_of_agent
+        cost_conwait = self.exp.getWaiting(paths = solution)
+        global_cost = cost_ft * cost_ut * (cost_conwait+1) + 1000 * (penality+1)
+        # global_cost = cost_ft * cost_ut * (penality+1)
+        # print("Ut", cost_ut)
+        # print("Ft", cost_ft)
+        # print("global cost", global_cost)
+        return global_cost, cost_ft, ut, penality, cost_conwait
 
     def formSubGraph(self, thres = 0.01, start_nodes = None, end_nodes = None):
         #threshold for eliminating edge TODO: find ways to tune it systematically
@@ -129,7 +168,9 @@ class VoronoiDirected:
                     p2 = self.G.edges[e,n,0]['probability']
                     
                     isImportant = n in start_nodes or e in start_nodes or n in end_nodes or e in end_nodes
-                    if (isImportant or (1-p1-p2) > thres): # edge (directional) with too low use probability will be eliminated
+                    retain_edge = (p1+p2) > thres
+                    #(1-p1-p2) > thres
+                    if (isImportant or retain_edge): # edge (directional) with too low use probability will be eliminated
                         # self.G.remove_edges(n,e,0)
                         # self.G.remove_edges(e,n,0)
                         subgraph_edge.append((n,e,0))
@@ -222,25 +263,28 @@ class VoronoiDirected:
         return percentage
 
     def getCongestionLv(self, paths=None):
-        def getSubGrid(loc):
+        def getSubGrid(loc, row=True):
+            idx = 0 if row else 1
             if loc == 0:
                 return 0
-            elif loc > 31:
+            elif loc > self.sz[idx]-2:
                 return -1
             else:
                 return int((loc-1)/constant.REGION)
         
-        sz = int(constant.MAP_SIZE/constant.REGION)
+        sz = (int(self.sz[0]/constant.REGION), int(self.sz[1]/constant.REGION))
         acc_congestion = []
         total_time = np.array(paths).shape[1]
         agents = np.array(paths).shape[0]
         avgg = []
         maxx = []
         for t in range(total_time):
-            congestion = np.zeros((sz,sz))
+            congestion = np.zeros(sz)
             for a in range(agents):
+                if paths[a][t] not in self.G.nodes:
+                    continue
                 pos = self.G.nodes[paths[a][t]]['position']
-                congestion[getSubGrid(pos.x),getSubGrid(pos.y)] += 1
+                congestion[getSubGrid(pos.x),getSubGrid(pos.y, row=False)] += 1
             
             acc_congestion.append(congestion)
             congestion_flat = congestion.flatten()

@@ -1,0 +1,5 @@
+dropout: 0.5
+hidden_channels: 32
+in_channels: 447
+num_layers: 3
+out_channels: 447

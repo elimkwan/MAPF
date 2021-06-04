@@ -74,30 +74,20 @@ def exp_voronoi(exp):
 
     # print("Obtained Graph")
 
-    voronoi = Voronoii(G)
+    voronoi = Voronoii(G, exp=exp)
     paths, cost = cbs(voronoi, exp.start_nodes, exp.end_nodes)
     if paths == None:
-        paths = np.array(exp.start_nodes).reshape((constant.NUM_OF_AGENT, -1))
-                
-    #     print("\nCannot find solution\n")
-    #     return 0, 0, 0, 0, 0, 0, 0, G
-    # else:
-    #     paths, cost = out
+        paths = np.array(exp.start_nodes).reshape((exp.NUM_OF_AGENT, -1))
 
-    # print("Total avaliable area in Voronoi Diagram", voronoi.getTotalDistance())
-    # print("Travelled area", travelled_area)
-    paths_np = np.array(paths)
+    paths = np.array(paths).reshape((exp.NUM_OF_AGENT, -1))
+                
+    paths_np = paths
     if np.any(paths_np[:,-1] != exp.end_nodes):
         print("\nCannot find solution\n")
 
-    travelled_dist = voronoi.getTravelledDistance(paths)
-    vor_total_dist, vor_total_area = voronoi.getTotalDistanceAndArea()
-    ft = travelled_dist/constant.NUM_OF_AGENT
-    u1 = travelled_dist/vor_total_dist
-
-    # u2 = voronoi.getCoverage(exp)
+    global_cost, cost_ft, ut, penality, conwait = voronoi.getOptimiserCost(paths, exp)
     u2 = 0
 
     congestion, maxmax, avgavg = voronoi.getCongestionLv(paths=paths)
 
-    return paths, ft, u1, u2, congestion, maxmax, avgavg, G
+    return paths, global_cost, penality, cost_ft, ut, u2, conwait, maxmax, avgavg, G

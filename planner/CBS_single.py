@@ -2,6 +2,7 @@ from planner.Astar import *
 
 from queue import PriorityQueue
 import numpy as np
+import core.Constant as constant
 
 
 def cbs_single(env, starts, goals):
@@ -11,7 +12,12 @@ def cbs_single(env, starts, goals):
 	mask = np.array(root.cost) != float('inf')
 	root_cost = np.sum(np.array(root.cost)[mask])
 	pq.put_nowait((root_cost, root.depth, root))
+	iteration = 0
+
 	while not pq.empty():
+		if iteration > constant.CBS_MAX_ITER:
+			break
+
 		cost, _, x = pq.get_nowait()
 		# print("sol", x.solution)
 		conflict = find_conflict(x.solution)
@@ -31,7 +37,10 @@ def cbs_single(env, starts, goals):
 					child.find_paths(env, starts, goals)
 					child_cost = np.sum(np.array(child.cost)[mask])
 					pq.put_nowait((child_cost, child.depth+np.random.rand(1)[0], child))
-	return None, cost
+
+		iteration += 1
+	
+	return [None]*len(starts), cost
 
 class Constraint:
 
